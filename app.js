@@ -354,10 +354,10 @@ async function initializeRecognizer() {
   setRecognitionBadge("正在加载本地手势识别器…");
   try {
     const { FilesetResolver, GestureRecognizer } = await import(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22"
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35"
     );
     const vision = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
     );
     recognizer = await GestureRecognizer.createFromOptions(vision, {
       baseOptions: {
@@ -371,6 +371,7 @@ async function initializeRecognizer() {
     setRecognitionBadge("举起手势，我在看…");
     runRecognitionLoop();
   } catch (error) {
+    console.error("Gesture recognizer failed to initialize:", error);
     modelState = "error";
     setRecognitionBadge("识别器未加载", false);
     els.cameraHelp.textContent = "手势识别器暂时无法加载。请检查网络后重新打开相机，或直接选择一个动作继续。";
