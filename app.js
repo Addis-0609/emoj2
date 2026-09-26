@@ -10,6 +10,17 @@ const GESTURES = {
       { emoji: "✨", caption: "太棒啦", color: "#ece2ff" },
     ],
   },
+  thumbsDown: {
+    modelNames: ["Thumb_Down"],
+    name: "拇指向下",
+    cue: "懂了，这次不太满意。",
+    cards: [
+      { emoji: "👎", caption: "不太行", color: "#e4e7ee" },
+      { emoji: "😕", caption: "有点失望", color: "#dce7f2" },
+      { emoji: "🙅", caption: "还是算了", color: "#ffe0dc" },
+      { emoji: "🫠", caption: "我先缓缓", color: "#ffe9b8" },
+    ],
+  },
   openPalm: {
     modelNames: ["Open_Palm"],
     name: "张开手掌",
@@ -63,6 +74,39 @@ const GESTURES = {
       { emoji: "💗", caption: "喜欢你", color: "#ffe1ea" },
       { emoji: "🥰", caption: "被暖到了", color: "#ffe5b9" },
       { emoji: "🌷", caption: "给你一朵花", color: "#f0dcf4" },
+    ],
+  },
+  ok: {
+    modelNames: [],
+    name: "OK 手势",
+    cue: "收到，一切 OK。",
+    cards: [
+      { emoji: "👌", caption: "没问题", color: "#d9f2e5" },
+      { emoji: "✅", caption: "确认收到", color: "#dcecff" },
+      { emoji: "😌", caption: "放心吧", color: "#fff0be" },
+      { emoji: "🆗", caption: "就这样定", color: "#ece2ff" },
+    ],
+  },
+  callMe: {
+    modelNames: [],
+    name: "打电话手势",
+    cue: "拇指和小指伸开，像是在说联系我。",
+    cards: [
+      { emoji: "🤙", caption: "回头联系", color: "#d8efff" },
+      { emoji: "📞", caption: "给我电话", color: "#ffe5a9" },
+      { emoji: "☎️", caption: "有空聊聊", color: "#ffd9d1" },
+      { emoji: "💬", caption: "等你消息", color: "#e5e1ff" },
+    ],
+  },
+  three: {
+    modelNames: [],
+    name: "三根手指",
+    cue: "数到三，准备开始。",
+    cards: [
+      { emoji: "3️⃣", caption: "三、二、一", color: "#dcecff" },
+      { emoji: "🤟", caption: "第三条", color: "#ffe5b9" },
+      { emoji: "⏳", caption: "倒数开始", color: "#ece2ff" },
+      { emoji: "🎬", caption: "开始行动", color: "#ffdbe5" },
     ],
   },
 };
@@ -338,6 +382,37 @@ function modelGestureToKey(name) {
   return Object.entries(GESTURES).find(([, config]) => config.modelNames.includes(name))?.[0] || null;
 }
 
+function landmarkDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+}
+
+function fingerExtended(landmarks, tip, pip) {
+  return landmarkDistance(landmarks[tip], landmarks[0]) > landmarkDistance(landmarks[pip], landmarks[0]) * 1.16;
+}
+
+function customLandmarkGesture(landmarks) {
+  if (!landmarks?.length) return null;
+  const palmSize = landmarkDistance(landmarks[0], landmarks[9]);
+  if (!palmSize) return null;
+
+  const thumbIndexGap = landmarkDistance(landmarks[4], landmarks[8]) / palmSize;
+  const index = fingerExtended(landmarks, 8, 6);
+  const middle = fingerExtended(landmarks, 12, 10);
+  const ring = fingerExtended(landmarks, 16, 14);
+  const pinky = fingerExtended(landmarks, 20, 18);
+  const thumb = landmarkDistance(landmarks[4], landmarks[0]) > landmarkDistance(landmarks[3], landmarks[0]) * 1.12;
+
+  if (thumbIndexGap < 0.32 && middle && ring && pinky) return "ok";
+  if (thumb && pinky && !index && !middle && !ring) return "callMe";
+  if (index && middle && ring && !pinky && thumbIndexGap > 0.48) return "three";
+  return null;
+}
+
+function recognizedGestureKey(results, candidate) {
+  const landmarks = results.landmarks?.[0];
+  return customLandmarkGesture(landmarks) || modelGestureToKey(candidate?.categoryName);
+}
+
 function runRecognitionLoop() {
   if (!stream || !recognizer) return;
   const tick = () => {
@@ -348,7 +423,7 @@ function runRecognitionLoop() {
       try {
         const results = recognizer.recognizeForVideo(els.cameraFeed, now);
         const candidate = results.gestures?.[0]?.[0];
-        const key = candidate && candidate.score >= 0.58 ? modelGestureToKey(candidate.categoryName) : null;
+        const key = candidate && candidate.score >= 0.58 ? recognizedGestureKey(results, candidate) : customLandmarkGesture(results.landmarks?.[0]);
         if (key) {
           if (key === lastDetectedKey) detectedFrames += 1;
           else {
