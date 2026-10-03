@@ -111,6 +111,59 @@ const GESTURES = {
   },
 };
 
+const EXPRESSIONS = {
+  low: {
+    name: "看起来有点低落",
+    marker: "☁",
+    cue: "我从表情里读到一点低落的线索。",
+    responses: [
+      "今天不必立刻变好。先喝一口水、把肩膀放松一点，也已经很够了。",
+      "如果愿意，给自己一分钟：慢慢吸气，再把呼气放得更长一点。",
+      "有些时候只是难熬，不代表你做得不够好。先陪自己待一会儿吧。",
+    ],
+  },
+  tense: {
+    name: "看起来有些紧绷",
+    marker: "〰",
+    cue: "眉眼和嘴部看起来有一点用力。",
+    responses: [
+      "你已经很努力了。先把下巴松一松，慢慢呼出一口气。",
+      "可以暂时不用解决所有事。挑一件最小的事，做完就停下来。",
+      "给自己留十秒钟空白：看看四周，感受脚踩在地面的感觉。",
+    ],
+  },
+  surprised: {
+    name: "看起来有点惊讶",
+    marker: "✦",
+    cue: "眼睛和嘴部的变化像是在消化一个意外。",
+    responses: [
+      "这一下好像来得有点突然。先不用急着回应，给自己一点反应时间。",
+      "意外的事会让人乱一下，这是很正常的。先把事情分成下一小步就好。",
+      "如果脑子有点吵，试着把最先想到的一句话写下来，其他的可以稍后再说。",
+    ],
+  },
+  happy: {
+    name: "看起来比较轻松",
+    marker: "☀",
+    cue: "嘴角的变化像是一个轻松的瞬间。",
+    responses: [
+      "这一点轻松很珍贵，记得把它收好。要不要把今天的小开心记下来？",
+      "看起来你有一点好心情。把它分一点给自己：做件喜欢的小事吧。",
+      "这一刻挺好。无需特别庆祝，也可以安静地享受它。",
+    ],
+  },
+  neutral: {
+    name: "只是想听一句话",
+    marker: "♡",
+    cue: "表情很平静，也完全可以只是来歇一会儿。",
+    responses: [
+      "你不需要表现得怎样，来这里停一会儿就好。",
+      "不管今天过得怎么样，你已经走到了现在。",
+      "给自己一点温柔的余地。慢一点，也没有关系。",
+    ],
+  },
+};
+
 const els = {
   startCamera: document.querySelector("#startCamera"),
   stopCamera: document.querySelector("#stopCamera"),
@@ -120,12 +173,19 @@ const els = {
   cameraPlaceholder: document.querySelector("#cameraPlaceholder"),
   cameraStatus: document.querySelector("#cameraStatus"),
   cameraHelp: document.querySelector("#cameraHelp"),
+  gestureMode: document.querySelector("#gestureMode"),
+  moodMode: document.querySelector("#moodMode"),
   recognitionBadge: document.querySelector("#recognitionBadge"),
   recognitionText: document.querySelector("#recognitionText"),
   manualGesture: document.querySelector("#manualGesture"),
   manualMatch: document.querySelector("#manualMatch"),
+  moodManual: document.querySelector("#moodManual"),
+  manualMood: document.querySelector("#manualMood"),
+  manualMoodMatch: document.querySelector("#manualMoodMatch"),
   resultsGrid: document.querySelector("#resultsGrid"),
   resultsSummary: document.querySelector("#resultsSummary"),
+  resultsTitle: document.querySelector("#results-title"),
+  resultsKicker: document.querySelector("#resultsKicker"),
   resultTip: document.querySelector("#resultTip"),
   shuffleResults: document.querySelector("#shuffleResults"),
   savedGrid: document.querySelector("#savedGrid"),
@@ -140,13 +200,20 @@ const els = {
 };
 
 let activeGesture = null;
+let activeExpression = null;
+let activeMode = "gesture";
 let stream = null;
 let recognizer = null;
+let faceRecognizer = null;
 let modelState = "idle";
+let faceModelState = "idle";
 let loopId = null;
 let lastPredictionAt = 0;
 let detectedFrames = 0;
 let lastDetectedKey = null;
+let lastDetectedExpression = null;
+let detectedExpressionFrames = 0;
+let expressionResponseIndex = 0;
 let toastTimer = null;
 let resultOrder = 0;
 let saved = loadSaved();
@@ -253,6 +320,89 @@ function renderResults() {
   els.resultTip.textContent = "点击“复制”直接粘贴到聊天框；也能下载图片或调用手机的分享面板。";
 }
 
+function renderExpressionResult() {
+  if (!activeExpression) return;
+  const expression = EXPRESSIONS[activeExpression];
+  const response = expression.responses[expressionResponseIndex % expression.responses.length];
+  els.resultsSummary.innerHTML = `表情线索：<strong>“${expression.name}”</strong> · ${expression.cue}`;
+  els.resultsGrid.innerHTML = `
+    <article class="mood-result">
+      <span class="mood-result-mark" aria-hidden="true">${expression.marker}</span>
+      <h3>${expression.name}</h3>
+      <p>${expression.cue}</p>
+      <div class="mood-response" id="moodResponse">${response}</div>
+      <div class="mood-actions">
+        <button type="button" data-action="next-mood-response">换一句</button>
+        <button type="button" data-action="copy-mood-response">复制这句话</button>
+      </div>
+      <p class="mood-disclaimer">这只是对可见表情的推测，不代表你的真实感受，也不能作任何心理健康判断。</p>
+    </article>`;
+  els.shuffleResults.disabled = false;
+  els.shuffleResults.textContent = "换一句";
+  els.resultTip.textContent = "如果这些话不贴合你的感受，也没关系；你最了解自己。";
+}
+
+function resetResultArea() {
+  els.resultsSummary.textContent = activeMode === "gesture" ? "先打开相机，或选择一个动作。" : "打开相机，或选择一个状态，听一句温和的话。";
+  els.resultsGrid.innerHTML = activeMode === "gesture"
+    ? `<div class="empty-state"><span class="empty-mark" aria-hidden="true">☝</span><p>动作识别后，这里会出现适合你的表情。</p></div>`
+    : `<div class="empty-state"><span class="empty-mark" aria-hidden="true">♡</span><p>表情陪伴会根据可见表情给出一句温和回应；也可以手动选择状态。</p></div>`;
+  els.shuffleResults.disabled = true;
+  els.shuffleResults.textContent = "换一批";
+  els.resultTip.textContent = activeMode === "gesture"
+    ? "点击“复制”粘贴到聊天框，或下载成图片保存到相册。"
+    : "表情不会被保存或上传；这不是对真实情绪的判断。";
+}
+
+function setMode(mode) {
+  if (mode === activeMode) return;
+  activeMode = mode;
+  activeGesture = null;
+  activeExpression = null;
+  resultOrder = 0;
+  expressionResponseIndex = 0;
+  lastDetectedKey = null;
+  lastDetectedExpression = null;
+  detectedFrames = 0;
+  detectedExpressionFrames = 0;
+  els.gestureMode.classList.toggle("is-active", mode === "gesture");
+  els.gestureMode.setAttribute("aria-pressed", String(mode === "gesture"));
+  els.moodMode.classList.toggle("is-active", mode === "mood");
+  els.moodMode.setAttribute("aria-pressed", String(mode === "mood"));
+  els.manualGesture.closest(".manual-match").hidden = mode !== "gesture";
+  els.moodManual.hidden = mode !== "mood";
+  els.recognizeNow.textContent = mode === "gesture" ? "识别当前动作" : "看看当前表情";
+  els.resultsKicker.textContent = mode === "gesture" ? "第 2 步" : "给自己一句话";
+  els.resultsTitle.textContent = mode === "gesture" ? "挑一个发出去" : "停一会儿，听一句";
+  resetResultArea();
+
+  if (!stream) {
+    els.cameraHelp.textContent = mode === "gesture"
+      ? "支持点赞、倒赞、挥手、比耶、握拳、食指向上、爱心、OK、打电话和三根手指。"
+      : "镜头只在这台设备上分析可见表情，不会判断你的真实心情。";
+    return;
+  }
+  if (loopId) window.cancelAnimationFrame(loopId);
+  loopId = null;
+  setRecognitionBadge(mode === "gesture" ? "正在切换到手势识别…" : "正在切换到表情陪伴…");
+  initializeActiveRecognizer();
+}
+
+function matchExpression(key, origin = "manual") {
+  if (!EXPRESSIONS[key]) return;
+  activeExpression = key;
+  expressionResponseIndex = 0;
+  renderExpressionResult();
+  const expression = EXPRESSIONS[key];
+  if (origin === "camera") {
+    setRecognitionBadge(`看到表情：${expression.name}`);
+    els.cameraHelp.textContent = `我看到的是“${expression.name}”的表情线索。它不等于你的真实感受；这里有一句话想送给你。`;
+  } else {
+    els.cameraHelp.textContent = `已按“${expression.name}”送上一句温和回应。你也可以随时换成更贴近自己的状态。`;
+    showToast("这里有一句话想送给你。", "success");
+  }
+}
+
 function renderSaved() {
   els.savedGrid.innerHTML = saved.length
     ? saved.map((item) => cardMarkup(item, "saved")).join("")
@@ -307,9 +457,11 @@ async function startCamera() {
     els.startCamera.querySelector("span:last-child").textContent = "相机已开启";
     els.recognizeNow.disabled = false;
     els.stopCamera.hidden = false;
-    els.cameraHelp.textContent = "请让一只手出现在画面中央，保持半秒钟。识别会自动开始。";
-    setRecognitionBadge("正在准备手势识别…");
-    initializeRecognizer();
+    els.cameraHelp.textContent = activeMode === "gesture"
+      ? "请让一只手出现在画面中央，保持半秒钟。识别会自动开始。"
+      : "请让脸部位于画面中央，保持片刻。分析只在这台设备上进行。";
+    setRecognitionBadge(activeMode === "gesture" ? "正在准备手势识别…" : "正在准备表情分析…");
+    initializeActiveRecognizer();
   } catch (error) {
     const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
     cameraError(denied ? "没有获得相机权限。请在浏览器地址栏中允许相机后重试，或先手动选择动作。" : "暂时无法打开相机。请确认没有其他应用正在使用它，然后重试。");
@@ -330,7 +482,14 @@ function stopCamera() {
   els.startCamera.querySelector("span:last-child").textContent = "打开相机";
   setCameraState("idle", "等待开启");
   setRecognitionBadge("", false);
-  els.cameraHelp.textContent = "相机已关闭。你可以重新打开相机，或选择一个动作继续。";
+  els.cameraHelp.textContent = activeMode === "gesture"
+    ? "相机已关闭。你可以重新打开相机，或选择一个动作继续。"
+    : "相机已关闭。你可以重新打开相机，或在下方选择一个状态。";
+}
+
+function initializeActiveRecognizer() {
+  if (activeMode === "gesture") initializeRecognizer();
+  else initializeFaceRecognizer();
 }
 
 function cameraError(message) {
@@ -345,6 +504,7 @@ function cameraError(message) {
 }
 
 async function initializeRecognizer() {
+  if (activeMode !== "gesture") return;
   if (modelState === "ready") {
     runRecognitionLoop();
     return;
@@ -369,13 +529,50 @@ async function initializeRecognizer() {
     });
     modelState = "ready";
     setRecognitionBadge("举起手势，我在看…");
-    runRecognitionLoop();
+    if (activeMode === "gesture") runRecognitionLoop();
   } catch (error) {
     console.error("Gesture recognizer failed to initialize:", error);
     modelState = "error";
     setRecognitionBadge("识别器未加载", false);
     els.cameraHelp.textContent = "手势识别器暂时无法加载。请检查网络后重新打开相机，或直接选择一个动作继续。";
     showToast("手势识别器加载失败，可使用手动选择。", "error");
+  }
+}
+
+async function initializeFaceRecognizer() {
+  if (activeMode !== "mood") return;
+  if (faceModelState === "ready") {
+    runExpressionLoop();
+    return;
+  }
+  if (faceModelState === "loading") return;
+  faceModelState = "loading";
+  setRecognitionBadge("正在加载本地表情分析器…");
+  try {
+    const { FilesetResolver, FaceLandmarker } = await import(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35"
+    );
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
+    );
+    faceRecognizer = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
+      },
+      runningMode: "VIDEO",
+      numFaces: 1,
+      outputFaceBlendshapes: true,
+    });
+    faceModelState = "ready";
+    setRecognitionBadge("看向镜头，我只读取可见表情…");
+    if (activeMode === "mood") runExpressionLoop();
+  } catch (error) {
+    console.error("Face landmarker failed to initialize:", error);
+    faceModelState = "error";
+    setRecognitionBadge("表情分析器未加载", false);
+    els.cameraHelp.textContent = "表情分析器暂时无法加载。你仍可以在下方手动选择一个状态。";
+    showToast("表情分析器加载失败，可使用手动选择。", "error");
   }
 }
 
@@ -415,9 +612,9 @@ function recognizedGestureKey(results, candidate) {
 }
 
 function runRecognitionLoop() {
-  if (!stream || !recognizer) return;
+  if (activeMode !== "gesture" || !stream || !recognizer) return;
   const tick = () => {
-    if (!stream || !recognizer) return;
+    if (activeMode !== "gesture" || !stream || !recognizer) return;
     const now = performance.now();
     if (els.cameraFeed.readyState >= 2 && now - lastPredictionAt > 110) {
       lastPredictionAt = now;
@@ -448,7 +645,77 @@ function runRecognitionLoop() {
   loopId = window.requestAnimationFrame(tick);
 }
 
+function blendshapeScore(categories, name) {
+  return categories?.find((category) => category.categoryName === name)?.score || 0;
+}
+
+function expressionFromBlendshapes(categories) {
+  const smile = (blendshapeScore(categories, "mouthSmileLeft") + blendshapeScore(categories, "mouthSmileRight")) / 2;
+  const frown = (blendshapeScore(categories, "mouthFrownLeft") + blendshapeScore(categories, "mouthFrownRight")) / 2;
+  const browDown = (blendshapeScore(categories, "browDownLeft") + blendshapeScore(categories, "browDownRight")) / 2;
+  const mouthPress = (blendshapeScore(categories, "mouthPressLeft") + blendshapeScore(categories, "mouthPressRight")) / 2;
+  const eyeWide = (blendshapeScore(categories, "eyeWideLeft") + blendshapeScore(categories, "eyeWideRight")) / 2;
+  const jawOpen = blendshapeScore(categories, "jawOpen");
+  const browInnerUp = blendshapeScore(categories, "browInnerUp");
+
+  if (smile > 0.46) return "happy";
+  if (eyeWide > 0.28 && jawOpen > 0.24) return "surprised";
+  if (frown > 0.26 && browInnerUp > 0.16) return "low";
+  if (browDown > 0.3 || mouthPress > 0.38) return "tense";
+  return "neutral";
+}
+
+function runExpressionLoop() {
+  if (activeMode !== "mood" || !stream || !faceRecognizer) return;
+  const tick = () => {
+    if (activeMode !== "mood" || !stream || !faceRecognizer) return;
+    const now = performance.now();
+    if (els.cameraFeed.readyState >= 2 && now - lastPredictionAt > 130) {
+      lastPredictionAt = now;
+      try {
+        const results = faceRecognizer.detectForVideo(els.cameraFeed, now);
+        const categories = results.faceBlendshapes?.[0]?.categories;
+        if (categories?.length) {
+          const expression = expressionFromBlendshapes(categories);
+          if (expression === lastDetectedExpression) detectedExpressionFrames += 1;
+          else {
+            lastDetectedExpression = expression;
+            detectedExpressionFrames = 1;
+          }
+          setRecognitionBadge(`看到表情线索：${EXPRESSIONS[expression].name}…`);
+          if (detectedExpressionFrames >= 5 && expression !== activeExpression) matchExpression(expression, "camera");
+        } else {
+          detectedExpressionFrames = 0;
+          lastDetectedExpression = null;
+          setRecognitionBadge("请让脸部位于画面中央…");
+        }
+      } catch {
+        // A transient video frame error should not interrupt the camera experience.
+      }
+    }
+    loopId = window.requestAnimationFrame(tick);
+  };
+  loopId = window.requestAnimationFrame(tick);
+}
+
 function recognizeCurrentAction() {
+  if (activeMode === "mood") {
+    if (faceModelState === "loading") {
+      showToast("表情分析器还在准备中，请稍等几秒。", "error");
+      return;
+    }
+    if (faceModelState === "error") {
+      showToast("表情分析器没有加载成功，请使用下方状态选择。", "error");
+      return;
+    }
+    if (!lastDetectedExpression) {
+      showToast("还没有看清表情。请让脸部位于画面中央，光线亮一些再试。", "error");
+      setRecognitionBadge("还没有看清，保持片刻…");
+      return;
+    }
+    matchExpression(lastDetectedExpression, "camera");
+    return;
+  }
   if (modelState === "loading") {
     showToast("识别器还在准备中，请稍等几秒。", "error");
     return;
@@ -571,6 +838,18 @@ async function shareCard(card) {
 function handleCardAction(event) {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
+  if (button.dataset.action === "next-mood-response" && activeExpression) {
+    expressionResponseIndex += 1;
+    renderExpressionResult();
+    return;
+  }
+  if (button.dataset.action === "copy-mood-response") {
+    const response = document.querySelector("#moodResponse")?.textContent;
+    if (response) {
+      copyText(response).then((success) => showToast(success ? "这句话已复制。" : "复制没有成功，请长按文字手动复制。", success ? "success" : "error"));
+    }
+    return;
+  }
   const container = button.closest(".sticker-card");
   const card = findCard(container?.dataset.cardId);
   if (!card) return;
@@ -584,15 +863,26 @@ function handleCardAction(event) {
 els.startCamera.addEventListener("click", startCamera);
 els.stopCamera.addEventListener("click", stopCamera);
 els.recognizeNow.addEventListener("click", recognizeCurrentAction);
+els.gestureMode.addEventListener("click", () => setMode("gesture"));
+els.moodMode.addEventListener("click", () => setMode("mood"));
 els.manualGesture.addEventListener("change", () => {
   els.manualMatch.disabled = !els.manualGesture.value;
 });
 els.manualMatch.addEventListener("click", () => matchGesture(els.manualGesture.value));
+els.manualMood.addEventListener("change", () => {
+  els.manualMoodMatch.disabled = !els.manualMood.value;
+});
+els.manualMoodMatch.addEventListener("click", () => matchExpression(els.manualMood.value));
 els.shuffleResults.addEventListener("click", () => {
-  if (!activeGesture) return;
-  resultOrder += 1;
-  renderResults();
-  showToast("已换一批排列，看看有没有更顺眼的。", "success");
+  if (activeMode === "mood" && activeExpression) {
+    expressionResponseIndex += 1;
+    renderExpressionResult();
+    showToast("换一句，看看哪句更贴近你。", "success");
+  } else if (activeGesture) {
+    resultOrder += 1;
+    renderResults();
+    showToast("已换一批排列，看看有没有更顺眼的。", "success");
+  }
 });
 els.resultsGrid.addEventListener("click", handleCardAction);
 els.savedGrid.addEventListener("click", handleCardAction);

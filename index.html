@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#fff7f2" />
     <meta
       name="description"
-      content="用手势快速找到想发的表情，复制、收藏或分享给朋友。"
+      content="用手势找表情，或通过表情获得一句温和的陪伴。"
     />
-    <title>emojiiiiii · 手势找表情</title>
+    <title>emojiiiiii · 手势与表情陪伴</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://storage.googleapis.com" />
@@ -23,7 +23,7 @@
           <span class="brand-mark" aria-hidden="true">☺</span>
           <span>emojiiiiii</span>
         </a>
-        <p class="topbar-note">把动作，变成刚好想发的表情</p>
+        <p class="topbar-note">把动作变成表情，也给心情一点空间</p>
         <button class="saved-shortcut" id="savedShortcut" type="button" aria-controls="savedPanel">
           <span aria-hidden="true">♡</span>
           <span>已收藏</span>
@@ -32,9 +32,9 @@
       </header>
 
       <section class="intro" aria-labelledby="page-title">
-        <p class="eyebrow">手势找表情 · 你的聊天小抄</p>
-        <h1 id="page-title">举个手势，<br />表情就到位。</h1>
-        <p class="intro-copy">打开相机，做出一个动作。emojiiiiii 会在设备本地识别常见手势，帮你挑出适合聊天的表情。</p>
+        <p class="eyebrow">手势找表情 · 表情小陪伴</p>
+        <h1 id="page-title">看见表情，<br />也接住心情。</h1>
+        <p class="intro-copy">用手势快速找聊天表情；也可以打开“表情陪伴”，让浏览器从面部表情中读到一点线索，并送上一句温和的话。</p>
       </section>
 
       <div class="tab-switcher" role="tablist" aria-label="内容切换">
@@ -52,6 +52,11 @@
             <span class="status-pill" id="cameraStatus" data-state="idle">等待开启</span>
           </div>
 
+          <div class="mode-switcher" role="group" aria-label="相机功能">
+            <button class="mode-button is-active" id="gestureMode" type="button" aria-pressed="true">手势找表情</button>
+            <button class="mode-button" id="moodMode" type="button" aria-pressed="false">表情陪伴</button>
+          </div>
+
           <div class="video-stage" id="videoStage" data-state="idle">
             <video id="cameraFeed" autoplay muted playsinline aria-label="相机预览"></video>
             <div class="camera-placeholder" id="cameraPlaceholder">
@@ -61,7 +66,7 @@
             </div>
             <div class="recognition-badge" id="recognitionBadge" hidden>
               <span class="pulse-dot" aria-hidden="true"></span>
-              <span id="recognitionText">正在看动作</span>
+              <span id="recognitionText">正在准备识别</span>
             </div>
             <button class="camera-close" id="stopCamera" type="button" hidden aria-label="关闭相机">×</button>
           </div>
@@ -100,12 +105,31 @@
               <button class="text-button" id="manualMatch" type="button" disabled>找表情</button>
             </div>
           </div>
+
+          <div class="manual-match mood-manual" id="moodManual" hidden aria-labelledby="mood-manual-title">
+            <div>
+              <p id="mood-manual-title">不想打开镜头？</p>
+              <span>你可以自己选一个此刻更接近的表情状态。</span>
+            </div>
+            <div class="manual-controls">
+              <label class="sr-only" for="manualMood">选择表情状态</label>
+              <select id="manualMood" name="manualMood">
+                <option value="">选择状态</option>
+                <option value="low">看起来有点低落</option>
+                <option value="tense">看起来有些紧绷</option>
+                <option value="surprised">看起来有点惊讶</option>
+                <option value="happy">看起来比较轻松</option>
+                <option value="neutral">只是想听一句话</option>
+              </select>
+              <button class="text-button" id="manualMoodMatch" type="button" disabled>听一句</button>
+            </div>
+          </div>
         </section>
 
         <section class="results-card" aria-labelledby="results-title">
           <div class="section-heading results-heading">
             <div>
-              <p class="section-kicker">第 2 步</p>
+              <p class="section-kicker" id="resultsKicker">第 2 步</p>
               <h2 id="results-title">挑一个发出去</h2>
             </div>
             <button class="quiet-button" id="shuffleResults" type="button" disabled>换一批</button>
@@ -135,7 +159,7 @@
 
       <footer class="privacy-note">
         <span aria-hidden="true">⌂</span>
-        手势识别在浏览器中完成，emojiiiiii 不会上传你的相机画面。
+        手势与表情分析均在浏览器中完成，emojiiiiii 不会上传你的相机画面。
       </footer>
     </main>
 
